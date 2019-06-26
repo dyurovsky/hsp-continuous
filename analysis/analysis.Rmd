@@ -1,0 +1,151 @@
+---
+title: "HSP Continuous"
+author: "Dan Yurovsky"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    highlight: tango
+    theme: sandstone
+    code_folding: hide
+    toc: false
+    toc_float: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-libraries, library, message=F, results='hide', warning=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(here)
+library(knitr)
+library(tidyboot)
+library(lme4)
+library(broom)
+
+theme_set(theme_classic(base_size = 14))
+```
+
+```{r read-data, message = FALSE}
+e1 <- read_csv(here("exp1.csv")) %>%
+  mutate(info = factor(`HL (1= low, 2=high)`, levels = c(1, 2), 
+                       labels = c("low", "high")),
+         experiment = 1) %>%
+  select(-`HL (1= low, 2=high)`)
+
+e2 <- read_csv(here("exp2_first5_all low.csv")) %>%
+  mutate(pre = factor(`pre(0 = no pre, -1=pre wrong, 1=pre right)`, 
+                      levels = c(0, -1, 1), labels = c("first", "wrong", "right")),
+         experiment = 2) %>%
+  rename(pre_code = `pre(0 = no pre, -1=pre wrong, 1=pre right)`)
+
+e3 <- read_csv(here("exp3.csv")) %>%
+  mutate(experiment = 3)
+```
+
+# Experiment 1
+
+```{r plot-e1}
+e1 %>%
+  group_by(itemID) %>%
+  summarise(acc = mean(acc)) %>%
+  ggplot(aes(x = acc)) + 
+  geom_histogram(breaks = seq(0,1,.1), color = "black", fill = "white")
+```
+
+```{r e1-stats}
+e1 %>%
+  group_by(info, itemID) %>%
+  summarise(acc = mean(acc)) %>%
+  summarise_at(vars(acc), list(mean = mean, min = min, max = max, sd = sd)) %>%
+  kable()
+```
+
+# Experiment 2
+
+```{r e2-plot}
+e2_bytrial <- e2 %>%
+  gather(measure, value, baseline, acc) %>%
+  group_by(trialID, measure, subID) %>%
+  summarise(value = mean(value)) %>%
+  tidyboot_mean(value)
+
+ggplot(e2_bytrial, aes(x = trialID, y = empirical_stat, ymin = ci_lower,
+                       ymax = ci_upper, color = measure, linetype = measure,
+                       label = measure)) + 
+  geom_pointrange() + 
+  geom_smooth(method = "lm", se = F) +
+  scale_color_ptol()
+```
+
+```{r e2-models, warning = FALSE}
+e2_lm1 <- glmer(acc ~ trialID + baseline + (1|subID), 
+                family = "binomial", data = e2)
+
+tidy(e2_lm1) %>%
+  filter(group == "fixed") %>%
+  select(-group) %>%
+  kable()
+
+e2_lm2 <- glmer(acc ~ trialID + baseline + pre_code + (1|subID), 
+                family = "binomial", data = e2)
+
+tidy(e2_lm2) %>%
+  filter(group == "fixed") %>%
+  select(-group) %>%
+  kable()
+```
+
+Check if previous trial accuracy predicts current accuracy 
+
+```{r e2-contingent-plot, warning = FALSE}
+e2_contingent <- e2 %>%
+  group_by(subID, blockID) %>%
+  mutate(last_acc = lag(acc)) %>%
+  filter(!is.na(last_acc)) %>%
+  mutate(last_acc = if_else(last_acc == 1, "Right", "Wrong")) %>%
+  ungroup() %>%
+  select(-pre_code, -baseline, -pre, -blockID) %>%
+  mutate(experiment = "2", subID = paste0("e2_", subID)) 
+
+comparison_data <- e1 %>%
+  ungroup() %>%
+  filter(info == "low") %>%
+  select(-info) %>%
+  filter(itemID %in% e2_contingent$itemID) %>%
+  mutate(experiment = "1", subID = paste0("e1_", subID), last_acc = "E1") %>%
+  bind_rows(e2_contingent)
+
+# Need to figure out how to reason about blockID for E1
+# comparison_data %>%
+#   group_by(experiment, trialID, last_acc) %>%
+#   tidyboot_mean(acc)
+```
+
+Compare just the incorrect trials from E2 to the trials in E1
+
+```{r comparison-lm, warning = FALSE}
+comparison_lm <- glmer(acc ~ experiment + (1|itemID) + (1|subID), 
+                family = "binomial", 
+                data = filter(comparison_data, last_acc != "Right"))
+
+tidy(comparison_lm) %>%
+  filter(group == "fixed") %>%
+  select(-group) %>%
+  kable()
+```
+
+
+```{r e2-contingent, eval = F, include = F}
+
+
+e2_lm3 <- glmer(acc ~ baseline + (1|subID), 
+                family = "binomial", data = e2_contingent)
+
+e2_contingent %>%
+  mutate(diff = acc - baseline) %>%
+  ungroup() %>%
+  tidyboot_mean(diff) %>%
+  kable()
+```
