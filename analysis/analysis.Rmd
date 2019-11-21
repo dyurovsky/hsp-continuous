@@ -155,7 +155,7 @@ tidy(comparison_lm) %>%
 
 Effect of proportion correct on previous trials for cases where the last trial was wrong
 
-```{r }
+```{r e2-count-contigent}
 e2_count <- e2 %>%
   group_by(subID, blockID) %>%
   mutate(cum_acc = cumsum(acc) - acc) %>%
@@ -164,12 +164,26 @@ e2_count <- e2 %>%
   select(subID, itemID, trialID, cum_acc) %>%
   mutate(subID = paste0("e2_", subID)) 
 
-e2_count_wrong <- e2_contingent  %>%
-  left_join(e2_count, by = c("subID", "itemID", "trialID")) %>%
-  filter(last_acc == "Wrong")
+e2_count_contingent <- e2_contingent  %>%
+  left_join(e2_count, by = c("subID", "itemID", "trialID"))
 
+count_lm <- countwrong_lm <- glmer(acc ~ cum_acc + trialID + 
+                                     (1|itemID) + (1|subID), 
+                                   family = "binomial", 
+                                   data = e2_count_contingent)
+
+tidy(count_lm) %>%
+  filter(effect == "fixed") %>%
+  select(-effect, -group) %>%
+  kable()
+```
+
+Effect of proportion correct on previous trials for cases where the last trial was wrong
+
+```{r e2-count-contingent-wrong}
 countwrong_lm <- glmer(acc ~ cum_acc + trialID + (1|itemID) + (1|subID), 
-      family = "binomial", data = e2_count_wrong)
+      family = "binomial", 
+      data = e2_count_contingent %>% filter(last_acc == "Wrong"))
 
 tidy(countwrong_lm) %>%
   filter(effect == "fixed") %>%
