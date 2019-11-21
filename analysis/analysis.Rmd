@@ -153,7 +153,7 @@ tidy(comparison_lm) %>%
   kable()
 ```
 
-Effect of proportion correct on previous trials for cases where the last trial was wrong
+Effect of proportion correct on previous trials
 
 ```{r e2-count-contigent}
 e2_count <- e2 %>%
